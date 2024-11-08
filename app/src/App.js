@@ -1,13 +1,13 @@
 import React, { useState, useRef } from 'react';
 import { FaSearch, FaMicrophone } from 'react-icons/fa';
-import axios from 'axios';  // Import axios
+import axios from 'axios';  
 import './App.css';
 
 function NbaSearchApp() {
   const [isRecording, setIsRecording] = useState(false);
   const [query, setQuery] = useState('');
   const [prediction, setPrediction] = useState(null);
-  const [loading, setLoading] = useState(false); // To track loading state
+  const [loading, setLoading] = useState(false); 
   const recognitionRef = useRef(null);
 
   const toggleRecording = () => {
@@ -67,19 +67,19 @@ function NbaSearchApp() {
       return;
     }
 
-    setLoading(true); // Set loading state to true
+    setLoading(true);
 
     try {
       const response = await axios.post('http://127.0.0.1:8080/predict', {
         player_name: query
       });
       
-      setPrediction(response.data); // Save the prediction data
+      setPrediction(response.data); 
     } catch (error) {
       console.error('Error fetching prediction:', error);
       alert('Error fetching prediction.');
     } finally {
-      setLoading(false); // Set loading state to false
+      setLoading(false); 
     }
   };
 
