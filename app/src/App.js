@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { FaSearch, FaMicrophone } from 'react-icons/fa';
+import {FaMicrophone } from 'react-icons/fa';
 import axios from 'axios';  
 import './App.css';
 
@@ -85,7 +85,7 @@ function NbaSearchApp() {
 
   return (
     <div className="App">
-      <h1>NBA Search</h1>
+      <h1>NBA Player Stat Prediction</h1>
 
       <div className="search-box">
         <input
