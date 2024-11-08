@@ -1,1 +1,4 @@
-# Predictor
+# NBA Player Stat Prediction App
+This project is a web application that predicts the future performance of NBA players based on their recent game statistics. The frontend is built with React, featuring voice input via the Web Speech API and a search box to enter player names. Users can submit player names to the backend, which fetches historical performance data and returns predictions for the player's points in their next game. The backend is powered by Flask and utilizes BeautifulSoup for web scraping data from Basketball-Reference.
+
+The backend processes the data using pandas for data manipulation and scikit-learn for machine learning. A Random Forest Regressor model is trained to predict the player's points based on features like minutes played, field goals attempted, turnovers, and more. The app then returns the predicted points and model accuracy (mean squared error) to the user. This simple yet powerful application combines machine learning, web scraping, and modern web technologies to offer NBA stat predictions.
