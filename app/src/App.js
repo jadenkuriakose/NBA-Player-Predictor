@@ -1,10 +1,13 @@
 import React, { useState, useRef } from 'react';
 import { FaSearch, FaMicrophone } from 'react-icons/fa';
+import axios from 'axios';  // Import axios
 import './App.css';
 
 function NbaSearchApp() {
   const [isRecording, setIsRecording] = useState(false);
   const [query, setQuery] = useState('');
+  const [prediction, setPrediction] = useState(null);
+  const [loading, setLoading] = useState(false); // To track loading state
   const recognitionRef = useRef(null);
 
   const toggleRecording = () => {
@@ -58,6 +61,28 @@ function NbaSearchApp() {
     }
   };
 
+  const handlePredict = async () => {
+    if (!query.trim()) {
+      alert('Please enter a player name.');
+      return;
+    }
+
+    setLoading(true); // Set loading state to true
+
+    try {
+      const response = await axios.post('http://127.0.0.1:8080/predict', {
+        player_name: query
+      });
+      
+      setPrediction(response.data); // Save the prediction data
+    } catch (error) {
+      console.error('Error fetching prediction:', error);
+      alert('Error fetching prediction.');
+    } finally {
+      setLoading(false); // Set loading state to false
+    }
+  };
+
   return (
     <div className="App">
       <h1>NBA Search</h1>
@@ -76,10 +101,17 @@ function NbaSearchApp() {
         </button>
       </div>
 
-      <button className="predict">
-          Predict!
+      <button className="predict" onClick={handlePredict} disabled={loading}>
+        {loading ? 'Loading...' : 'Predict!'}
       </button>
 
+      {prediction && (
+        <div className="prediction-result">
+          <h2>Prediction Result</h2>
+          <p><strong>Predicted Points:</strong> {prediction.predicted_points}</p>
+          <p><strong>Mean Squared Error:</strong> {prediction.mse}</p>
+        </div>
+      )}
     </div>
   );
 }

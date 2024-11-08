@@ -61,3 +61,13 @@ h1{
   background-color: #2563eb; 
   transform: scale(1.05); 
 }
+
+p{
+  position:relative;
+  top: 200px;
+}
+
+h2{
+  position:relative;
+  top: 200px;
+}
