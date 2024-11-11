@@ -49,7 +49,7 @@ def find_player_page(first_name, last_name):
     print(f"No matching player found for {first_name} {last_name} after 6 attempts.")
     return None
 
-def get_last_n_games(player_url, season='2024', n_games=20):
+def get_last_n_games(player_url, season='2024', n_games=30):
     response = requests.get(player_url.replace('.html', f'/gamelog/{season}'))
     if response.status_code != 200:
         print("Could not retrieve data. Check player URL and season.")
@@ -146,7 +146,7 @@ def predict():
     if player_url is None:
         return jsonify({'error': 'Player not found.'}), 404
 
-    stats_df = get_last_n_games(player_url, season=season, n_games=15)
+    stats_df = get_last_n_games(player_url, season=season, n_games=30)
     if stats_df is None:
         return jsonify({'error': 'Player stats not found.'}), 404
 
