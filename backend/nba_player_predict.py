@@ -7,10 +7,18 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-import unidecode
+import unicodedata
+import html
+
+
 
 app = Flask(__name__)
 CORS(app)
+
+
+def remove_accents(input_str):
+    nfkd_form = unicodedata.normalize('NFKD', input_str)
+    return ''.join([c for c in nfkd_form if not unicodedata.combining(c)])
 
 def find_player_page(first_name, last_name):
     base = "https://www.basketball-reference.com"
@@ -20,18 +28,24 @@ def find_player_page(first_name, last_name):
         try:
             response = requests.get(url)
             response.raise_for_status()
+            
+            response.encoding = 'utf-8'
+            
             soup = BeautifulSoup(response.text, 'html.parser')
+
             player_header = soup.find('h1')
             if player_header:
                 player_name = player_header.text.strip()
-                if player_name.lower() == f"{first_name} {last_name}".lower():
+
+                player_name = html.unescape(player_name)
+
+                normalized_name = remove_accents(player_name)
+
+                if normalized_name.lower() == f"{first_name} {last_name}".lower():
                     return url
-                    break
         except requests.RequestException as e:
             print(f"An error occurred while fetching stats for {url}: {e}")
-            player_id = f"{last_name[0].lower()}/{last_name.lower()[:5]}{first_name.lower()[:2]}0{number-1}.html"
-            url = f"{base}/players/{player_id}"
-            return url
+    
     print(f"No matching player found for {first_name} {last_name} after 6 attempts.")
     return None
 
