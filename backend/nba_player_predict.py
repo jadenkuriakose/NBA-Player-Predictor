@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-from flask_executor import Executor
+from flask_cors import CORS 
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -11,7 +10,6 @@ from sklearn.preprocessing import StandardScaler
 
 app = Flask(__name__)
 CORS(app)
-executor = Executor(app)
 
 def find_player_page(first_name, last_name):
     base = "https://www.basketball-reference.com"
@@ -32,35 +30,29 @@ def find_player_page(first_name, last_name):
     print(f"No matching player found for {first_name} {last_name} after 6 attempts.")
     return None
 
-def get_last_n_games(player_name, season='2023', n_games=15):
-    name_parts = player_name.split()
-    if len(name_parts) == 2:
-        first_name, last_name = name_parts
-    elif len(name_parts) == 1:
-        first_name, last_name = name_parts[0], name_parts[0]
-    else:
-        return {"error": "Invalid player name format. Please provide a valid NBA player's name."}
-    player_url = find_player_page(first_name, last_name)
-    if not player_url:
-        return {"error": f"Could not find player page for {first_name} {last_name}."}
-    player_id = player_url.split('/')[-1].split('.')[0]
-    url = f"https://www.basketball-reference.com/players/{player_id[:1]}/{player_id}/gamelog/{season}"
-    response = requests.get(url)
+def get_last_n_games(player_url, season='2023', n_games=20):
+    response = requests.get(player_url.replace('.html', f'/gamelog/{season}'))
     if response.status_code != 200:
-        return {"error": "Could not retrieve game log data. Check player name and season."}
+        print("Could not retrieve data. Check player URL and season.")
+        return None
+
     soup = BeautifulSoup(response.text, 'html.parser')
     stats_table = soup.find('table', {'id': 'pgl_basic'})
+
     if not stats_table:
-        return {"error": "No game log found for the player."}
+        print("No stats found for the player.")
+        return None
+
     data = []
-    for row in stats_table.find_all('tr')[1:]:
-        cols = row.find_all('td')
-        if len(cols) > 0:
-            game_data = [col.get_text() for col in cols]
-            data.append(game_data)
+    for row in stats_table.find_all('tr', class_=lambda x: x != 'thead'):
+        cols = [col.get_text() for col in row.find_all('td')]
+        if cols:
+            data.append(cols)
+    
     columns = [th.get_text() for th in stats_table.find('thead').find_all('th')][1:]
     stats_df = pd.DataFrame(data, columns=columns)
     stats_df = stats_df.apply(pd.to_numeric, errors='ignore')
+    
     stats_df = stats_df.tail(n_games).reset_index(drop=True)
     return stats_df
 
@@ -73,47 +65,90 @@ def convert_minutes(mp):
 
 def preprocess_data(stats_df):
     stats_df['MP'] = stats_df['MP'].apply(convert_minutes)
-    features = ['PTS', 'AST', 'TRB', 'MP', 'FGA', '3PA', 'TOV', 'PF']
+    features = ['MP', 'FGA', '3PA', 'FTA', 'TOV', 'PF']
+    targets = ['PTS', 'AST', 'TRB']
+    
     X = stats_df[features].fillna(0)
-    y = stats_df['PTS'].shift(-1).dropna()
-    X = X.iloc[:len(y)]
+    
+    y_dict = {}
+    for target in targets:
+        y_dict[target] = stats_df[target].shift(-1).dropna()
+    
+    X = X.iloc[:len(y_dict[targets[0]])]
+    
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
-    return X_scaled, y
+    
+    return X_scaled, y_dict, features, targets
 
-def train_model(X_train, y_train, X_test, y_test):
-    model = RandomForestRegressor(n_estimators=100, max_depth=10)
-    model.fit(X_train, y_train)
-    predictions = model.predict(X_test)
-    mse = mean_squared_error(y_test, predictions)
-    return model, mse
-
-def predict_next_game(model, last_game_stats):
-    predicted_points = model.predict(last_game_stats)
-    return predicted_points[0]
-
-def process_and_predict(player_name):
-    stats_df = get_last_n_games(player_name, season='2023', n_games=15)
-    if isinstance(stats_df, dict) and 'error' in stats_df:
-        return stats_df
-    X, y = preprocess_data(stats_df)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
-    model, mse = train_model(X_train, y_train, X_test, y_test)
-    last_game = X[-1].reshape(1, -1)
-    predicted_points = predict_next_game(model, last_game)
-    return {"predicted_points": predicted_points, "mse": mse}
+class MultiStatPredictor:
+    def __init__(self):
+        self.models = {}
+        self.features = None
+        self.targets = None
+    
+    def train(self, X_train, y_dict_train, X_test, y_dict_test):
+        self.models = {}
+        results = {}
+        
+        for target in y_dict_train.keys():
+            model = RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42)
+            model.fit(X_train, y_dict_train[target])
+            
+            predictions = model.predict(X_test)
+            mse = mean_squared_error(y_dict_test[target], predictions)
+            rmse = mse ** 0.5
+            
+            self.models[target] = model
+            results[target] = rmse
+        
+        return results
+    
+    def predict_next_game(self, last_game_stats):
+        predictions = {}
+        for target, model in self.models.items():
+            predicted_value = model.predict(last_game_stats)[0]
+            predictions[target] = round(predicted_value, 1)
+        return predictions
 
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
     player_name = data.get('player_name')
-    if not player_name:
-        return jsonify({"error": "Player name is required"}), 400
-    future = executor.submit(process_and_predict, player_name)
-    result = future.result()
-    if 'error' in result:
-        return jsonify(result), 400
-    return jsonify(result)
+    season = '2023'
+
+    name_parts = player_name.split()
+    if len(name_parts) != 2:
+        return jsonify({'error': 'Invalid player name format. Please provide first and last name.'}), 400
+    first_name, last_name = name_parts
+
+    # Use find_player_page to get the player URL
+    player_url = find_player_page(first_name, last_name)
+    if player_url is None:
+        return jsonify({'error': 'Player not found.'}), 404
+
+    stats_df = get_last_n_games(player_url, season=season, n_games=15)
+    if stats_df is None:
+        return jsonify({'error': 'Player stats not found.'}), 404
+
+    X, y_dict, features, targets = preprocess_data(stats_df)
+
+    X_train, X_test = train_test_split(X, test_size=0.2, shuffle=False)
+    
+    y_dict_train = {}
+    y_dict_test = {}
+    for target in targets:
+        y_train, y_test = train_test_split(y_dict[target], test_size=0.2, shuffle=False)
+        y_dict_train[target] = y_train
+        y_dict_test[target] = y_test
+
+    predictor = MultiStatPredictor()
+    predictor.train(X_train, y_dict_train, X_test, y_dict_test)
+
+    last_game = X[-1].reshape(1, -1)
+    predictions = predictor.predict_next_game(last_game)
+    
+    return jsonify(predictions)
 
 if __name__ == "__main__":
     app.run(debug=True, port=8080)
