@@ -49,7 +49,7 @@ def find_player_page(first_name, last_name):
     print(f"No matching player found for {first_name} {last_name} after 6 attempts.")
     return None
 
-def get_last_n_games(player_url, season='2023', n_games=20):
+def get_last_n_games(player_url, season='2024', n_games=20):
     response = requests.get(player_url.replace('.html', f'/gamelog/{season}'))
     if response.status_code != 200:
         print("Could not retrieve data. Check player URL and season.")
@@ -134,7 +134,7 @@ class MultiStatPredictor:
 def predict():
     data = request.get_json()
     player_name = data.get('player_name')
-    season = '2023'
+    season = '2024'
 
     name_parts = player_name.split()
     if len(name_parts) != 2:
