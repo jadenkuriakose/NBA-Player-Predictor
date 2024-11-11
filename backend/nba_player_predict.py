@@ -7,6 +7,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+import unidecode
 
 app = Flask(__name__)
 CORS(app)
@@ -25,8 +26,12 @@ def find_player_page(first_name, last_name):
                 player_name = player_header.text.strip()
                 if player_name.lower() == f"{first_name} {last_name}".lower():
                     return url
+                    break
         except requests.RequestException as e:
             print(f"An error occurred while fetching stats for {url}: {e}")
+            player_id = f"{last_name[0].lower()}/{last_name.lower()[:5]}{first_name.lower()[:2]}0{number-1}.html"
+            url = f"{base}/players/{player_id}"
+            return url
     print(f"No matching player found for {first_name} {last_name} after 6 attempts.")
     return None
 
