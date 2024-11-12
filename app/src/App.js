@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { FaMicrophone } from 'react-icons/fa';
 import axios from 'axios';
 import './App.css';
@@ -6,9 +6,8 @@ import './App.css';
 function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [query, setQuery] = useState('');
-  const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
-
+  const [result, setResult] = useState(null); // Combined state for prediction and explanation
   const recognitionRef = useRef(null);
 
   const toggleRecording = () => {
@@ -27,26 +26,19 @@ function App() {
       recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
 
-      recognitionRef.current.onstart = () => {
-        setIsRecording(true);
-      };
+      recognitionRef.current.onstart = () => setIsRecording(true);
 
       recognitionRef.current.onresult = (event) => {
         const transcript = Array.from(event.results)
           .map(result => result[0])
           .map(result => result.transcript)
           .join('');
-
         setQuery(transcript);
       };
 
-      recognitionRef.current.onerror = () => {
-        setIsRecording(false);
-      };
+      recognitionRef.current.onerror = () => setIsRecording(false);
 
-      recognitionRef.current.onend = () => {
-        setIsRecording(false);
-      };
+      recognitionRef.current.onend = () => setIsRecording(false);
 
       recognitionRef.current.start();
     } else {
@@ -61,7 +53,7 @@ function App() {
     }
   };
 
-  const handlePredict = async () => {
+  const handlePredictionAndExplanation = useCallback(async () => {
     if (!query.trim()) {
       alert('Please enter a player name.');
       return;
@@ -70,17 +62,27 @@ function App() {
     setLoading(true);
 
     try {
-      const response = await axios.post('http://127.0.0.1:8080/predict', {
-        player_name: query
-      });
-      
-      setPrediction(response.data);
+      // Fetch both prediction and explanation at the same time
+      const [predictionResponse, explanationResponse] = await Promise.all([
+        axios.post('http://127.0.0.1:8080/predict', { player_name: query }),
+        axios.post('http://127.0.0.1:8080/explanation', { player_name: query })
+      ]);
+
+      if (predictionResponse.data && explanationResponse.data) {
+        setResult({
+          prediction: predictionResponse.data,
+          explanation: explanationResponse.data.explanation || 'No explanation available.',
+        });
+      } else {
+        alert('Prediction or explanation data not available.');
+      }
     } catch (error) {
-      alert('Error fetching prediction.');
+      console.error('Error fetching prediction or explanation:', error);
+      alert('Error fetching prediction or explanation.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [query]);
 
   return (
     <div className="App">
@@ -97,27 +99,34 @@ function App() {
               placeholder="Search NBA players"
               className="search-input"
             />
-          <button 
-            className={`mic-btn ${isRecording ? 'recording' : ''}`} 
-            onClick={toggleRecording}
-          >
+            <button
+              className={`mic-btn ${isRecording ? 'recording' : ''}`}
+              onClick={toggleRecording}
+            >
               <FaMicrophone size={16} />
             </button>
-            </div>
+          </div>
         </div>
 
-        <button className="predict" onClick={handlePredict} disabled={loading}>
+        <button className="predict" onClick={handlePredictionAndExplanation} disabled={loading}>
           {loading ? 'Loading...' : 'Predict!'}
         </button>
 
-        {prediction && (
+        {result && (
           <div className="prediction-result">
             <h2>Prediction Result</h2>
             <div className="prediction-stats">
-              <p><strong>Predicted Points:</strong> {prediction.PTS}</p>
-              <p><strong>Predicted Assists:</strong> {prediction.AST}</p>
-              <p><strong>Predicted Rebounds:</strong> {prediction.TRB}</p>
+              <p><strong>Predicted Points:</strong> {result.prediction?.PTS}</p>
+              <p><strong>Predicted Assists:</strong> {result.prediction?.AST}</p>
+              <p><strong>Predicted Rebounds:</strong> {result.prediction?.TRB}</p>
             </div>
+
+            {result.explanation && (
+              <div className="prediction-explanation">
+                <h3>Explanation</h3>
+                <p>{result.explanation}</p>
+              </div>
+            )}
           </div>
         )}
       </div>

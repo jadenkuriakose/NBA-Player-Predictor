@@ -11,9 +11,17 @@ import unicodedata
 import html
 import shap
 import numpy as np
+from groq import Groq
+from dotenv import load_dotenv
+from flask_executor import Executor
+
 
 app = Flask(__name__)
 CORS(app)
+executor = Executor(app)
+
+
+load_dotenv()
 
 def remove_accents(input_str):
     nfkd_form = unicodedata.normalize('NFKD', input_str)
@@ -164,8 +172,8 @@ def predict():
     
     return jsonify(predictions)
 
-@app.route('/predict_with_explanation', methods=['POST'])
-def predict_with_explanation():
+@app.route('/explanation', methods=['POST'])
+def explanation():
     data = request.get_json()
     
     player_name = data.get('player_name')
@@ -176,6 +184,7 @@ def predict_with_explanation():
         return jsonify({'error': 'Invalid player name format. Please provide first and last name.'}), 400
     first_name, last_name = name_parts
 
+    # Find player URL and retrieve stats
     player_url = find_player_page(first_name, last_name)
     if player_url is None:
         return jsonify({'error': 'Player not found.'}), 404
@@ -184,8 +193,10 @@ def predict_with_explanation():
     if stats_df is None:
         return jsonify({'error': 'Player stats not found.'}), 404
 
+    # Preprocess the data
     X, y_dict, features, targets = preprocess_data(stats_df)
 
+    # Train/test split for the model
     X_train, X_test = train_test_split(X, test_size=0.2, shuffle=False)
     
     y_dict_train = {}
@@ -195,29 +206,39 @@ def predict_with_explanation():
         y_dict_train[target] = y_train
         y_dict_test[target] = y_test
 
+    # Train the model
     predictor = MultiStatPredictor()
     predictor.train(X_train, y_dict_train, X_test, y_dict_test)
 
+    # Predict the next game stats
     last_game = X[-1].reshape(1, -1)
     predictions = predictor.predict_next_game(last_game)
 
-
-    explainer = shap.TreeExplainer(predictor.models['PTS'])
-
+    # Use SHAP to explain the model prediction
+    explainer = shap.TreeExplainer(predictor.models['PTS'])  # Explain the model for predicting 'PTS'
     shap_values = explainer.shap_values(last_game)
     
-    feature_importance = dict(zip(features, shap_values[0]))
+    # Prepare a human-readable explanation of the prediction using SHAP
+    feature_contributions = []
+    for feature, shap_value in zip(features, shap_values[0]):
+        contribution = round(shap_value, 2)
+        feature_contributions.append(f"{feature} contributed {contribution} points")
     
-    base_value = explainer.expected_value[0]
-    
-    explanation = {
-        "prediction": predictions['PTS'],
-        "base_value": base_value,
-        "feature_importance": feature_importance,
-        "shap_values": shap_values[0].tolist()
-    }
-    
-    return jsonify(explanation)
+    # Generate a simple explanation
+    explanation_text = f"Prediction for {first_name} {last_name}'s upcoming game:\n"
+    explanation_text += f"Expected Points: {round(predictions['PTS'], 1)}\n\n"
+    explanation_text += "The prediction is based on the following factors:\n"
+    explanation_text += "\n".join(feature_contributions)
+    explanation_text += "\n\nIn simple terms, this prediction takes into account various statistics from the last few games, such as the player's minutes played, field goal attempts, turnovers, and more."
 
-if __name__ == "__main__":
-    app.run(debug=True, port=8080)
+    # Return the prediction and explanation
+    return jsonify({
+        "status": "success",
+        "prediction": predictions['PTS'],
+        "explanation": explanation_text,
+        "message": "Prediction and explanation generated successfully"
+    })
+
+
+if __name__ == '__main__':
+    app.run(debug=True, port = 8080)
