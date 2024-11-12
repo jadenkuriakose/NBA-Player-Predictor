@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS 
+from flask_cors import CORS
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -9,12 +9,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import unicodedata
 import html
-
-
+import shap
+import numpy as np
 
 app = Flask(__name__)
 CORS(app)
-
 
 def remove_accents(input_str):
     nfkd_form = unicodedata.normalize('NFKD', input_str)
@@ -28,9 +27,7 @@ def find_player_page(first_name, last_name):
         try:
             response = requests.get(url)
             response.raise_for_status()
-            
             response.encoding = 'utf-8'
-            
             soup = BeautifulSoup(response.text, 'html.parser')
 
             player_header = soup.find('h1')
@@ -38,7 +35,6 @@ def find_player_page(first_name, last_name):
                 player_name = player_header.text.strip()
 
                 player_name = html.unescape(player_name)
-
                 normalized_name = remove_accents(player_name)
 
                 if normalized_name.lower() == f"{first_name} {last_name}".lower():
@@ -141,7 +137,6 @@ def predict():
         return jsonify({'error': 'Invalid player name format. Please provide first and last name.'}), 400
     first_name, last_name = name_parts
 
-    # Use find_player_page to get the player URL
     player_url = find_player_page(first_name, last_name)
     if player_url is None:
         return jsonify({'error': 'Player not found.'}), 404
@@ -168,6 +163,61 @@ def predict():
     predictions = predictor.predict_next_game(last_game)
     
     return jsonify(predictions)
+
+@app.route('/predict_with_explanation', methods=['POST'])
+def predict_with_explanation():
+    data = request.get_json()
+    
+    player_name = data.get('player_name')
+    season = '2024'
+
+    name_parts = player_name.split()
+    if len(name_parts) != 2:
+        return jsonify({'error': 'Invalid player name format. Please provide first and last name.'}), 400
+    first_name, last_name = name_parts
+
+    player_url = find_player_page(first_name, last_name)
+    if player_url is None:
+        return jsonify({'error': 'Player not found.'}), 404
+
+    stats_df = get_last_n_games(player_url, season=season, n_games=31)
+    if stats_df is None:
+        return jsonify({'error': 'Player stats not found.'}), 404
+
+    X, y_dict, features, targets = preprocess_data(stats_df)
+
+    X_train, X_test = train_test_split(X, test_size=0.2, shuffle=False)
+    
+    y_dict_train = {}
+    y_dict_test = {}
+    for target in targets:
+        y_train, y_test = train_test_split(y_dict[target], test_size=0.2, shuffle=False)
+        y_dict_train[target] = y_train
+        y_dict_test[target] = y_test
+
+    predictor = MultiStatPredictor()
+    predictor.train(X_train, y_dict_train, X_test, y_dict_test)
+
+    last_game = X[-1].reshape(1, -1)
+    predictions = predictor.predict_next_game(last_game)
+
+
+    explainer = shap.TreeExplainer(predictor.models['PTS'])
+
+    shap_values = explainer.shap_values(last_game)
+    
+    feature_importance = dict(zip(features, shap_values[0]))
+    
+    base_value = explainer.expected_value[0]
+    
+    explanation = {
+        "prediction": predictions['PTS'],
+        "base_value": base_value,
+        "feature_importance": feature_importance,
+        "shap_values": shap_values[0].tolist()
+    }
+    
+    return jsonify(explanation)
 
 if __name__ == "__main__":
     app.run(debug=True, port=8080)
